@@ -3,6 +3,7 @@ import os
 from utils.data_pp import genHeteroGraph, TrajDataPP, MakeDataset
 from utils.quadtree import SatQuadTree
 from utils.config import ae_config
+import utils.config as conf
 import train
 import test
 from utils.config import pp_config, traj_config
@@ -64,6 +65,12 @@ if __name__ == '__main__':
     ######### train #########
     if traj_config.action == "train":
         ret = train.train_rosetea(traj_config)
+        if ret:  # if early stopped, need to train a second stage
+            conf.initSettings()
+            traj_config.lr = traj_config.lr/2
+            traj_config.epoch = 10
+            traj_config.load_pretrained = True
+            ret = train.train_rosetea(traj_config)
     elif traj_config.action == "test":
         train.test_rosetea(traj_config, traj_config.model_saving_path)
     # train.getEmbeddedTiles(traj_config, traj_config.model_saving_path)
