@@ -1,4 +1,6 @@
 import os
+import pickle
+
 import torch
 import torch.utils.data
 from torch.utils.data import Dataset, DataLoader
@@ -35,15 +37,15 @@ def image_loader(image_path, transformation):
 
 def SatImageDataloader(config):
     loaders = {
-        'std': transforms.Compose(
-            [transforms.Resize(config.imgsize),
-             transforms.RandomResizedCrop(256),
-             transforms.ToTensor(),
-             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]),
-        'no_norm': transforms.Compose(
-            [transforms.Resize(config.imgsize),
-             transforms.RandomResizedCrop(256),
-             transforms.ToTensor()]),
+        # 'std': transforms.Compose(
+        #     [transforms.Resize(config.imgsize),
+        #      transforms.RandomResizedCrop(256),
+        #      transforms.ToTensor(),
+        #      transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]),
+        # 'no_norm': transforms.Compose(
+        #     [transforms.Resize(config.imgsize),
+        #      transforms.RandomResizedCrop(256),
+        #      transforms.ToTensor()]),
         'no_trans': transforms.Compose(
             [transforms.ToTensor()])
     }
@@ -75,10 +77,24 @@ class SatImageDataset(torch.utils.data.Dataset):
         return
 
 
+class ContrastDataset:
+    def __init__(self, path="./data/POI/contrast_nyc.pt", num=100):
+        self.neg_ix = torch.load(path)
+        self.num = num
+
+    def random_sample(self):
+        contrast = []
+        for row in self.neg_ix:
+            rand_i = torch.randint(len(row), (self.num,))
+            selected = row[rand_i]
+            contrast.append(selected)
+        return torch.stack(contrast)
+
+
 ########################################################################
 # part 2: Trajectory dataset
 ########################################################################
-class TaxiTrajDataset(torch.utils.data.Dataset):
+class TrajDataset(torch.utils.data.Dataset):
     def __init__(self, pp_data_path, pp_subgraph_path):
         self.pp_data = torch.load(pp_data_path)
         self.pp_subgraph_path = pp_subgraph_path
@@ -125,20 +141,43 @@ class TaxiTrajDataset(torch.utils.data.Dataset):
             subgraph_recovery, b_subgraph_nodes, b_subgraph, \
             b_target_tile, b_target_poi
 
-
+dataset_zip = None
 def TrajDataLoader(config):
-    train_dataset_main = TaxiTrajDataset(config.traj_processed_train, config.traj_subgraph_train)
-    val_dataset = TaxiTrajDataset(config.traj_processed_val, config.traj_subgraph_val)
-    len_train = int(config.train_data_rate * len(train_dataset_main))
-    len_val = len(train_dataset_main) - len_train
-    train_dataset, test_dataset = torch.utils.data.random_split(train_dataset_main, [len_train, len_val])
+    global dataset_zip
+    if dataset_zip is None:
+        train_dataset = TrajDataset(os.path.join(config.traj_pp_dir, "train.pt"),
+                                    os.path.join(config.traj_pp_dir, "train_graph.pt"))
+        val_dataset = TrajDataset(os.path.join(config.traj_pp_dir, "valid.pt"),
+                                  os.path.join(config.traj_pp_dir, "valid_graph.pt"))
+        test_dataset = TrajDataset(os.path.join(config.traj_pp_dir, "test.pt"),
+                                   os.path.join(config.traj_pp_dir, "test_graph.pt"))
+        collect_fn = train_dataset.collect_fn
+        dataset_zip = (train_dataset, val_dataset, test_dataset, collect_fn)
+        print("created datasets.")
+    else:
+        train_dataset, val_dataset, test_dataset, collect_fn = dataset_zip
     train_loader = DataLoader(train_dataset, batch_size=int(config.batch_size),
-                              shuffle=config.shuffle, collate_fn=train_dataset_main.collect_fn)
-    test_loader = DataLoader(test_dataset, batch_size=int(config.batch_size),
-                             shuffle=config.shuffle, collate_fn=train_dataset_main.collect_fn)
-    val_loader = DataLoader(val_dataset, batch_size=int(config.batch_size),
-                            shuffle=config.shuffle, collate_fn=train_dataset_main.collect_fn)
-    return train_loader, test_loader, val_loader
+                              shuffle=config.shuffle, collate_fn=collect_fn)
+    val_loader = DataLoader(val_dataset, batch_size=1,
+                            shuffle=config.shuffle, collate_fn=collect_fn)
+    test_loader = DataLoader(test_dataset, batch_size=1,
+                             shuffle=config.shuffle, collate_fn=collect_fn)
+    print("created loaders.")
+    return train_loader, val_loader, test_loader
+
+
+def SaveDatasetZip(path):
+    global dataset_zip
+    if dataset_zip is not None:
+        with open(path, 'wb') as file:
+            pickle.dump(dataset_zip, file)
+    print("saved!")
+
+
+def LoadDatasetZip(path):
+    global dataset_zip
+    with open(path, 'rb') as file:
+        dataset_zip = pickle.load(file)
 
 
 def pad_2d_tensor(tensor_list, tgt_size, padding_value=0):
