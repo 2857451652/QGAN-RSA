@@ -112,10 +112,8 @@ def trajSplit(user_list, traj_list):
             if last_tid == 0:
                 last_tid = tid
                 single_traj.append(record)
-            elif len(single_traj) > 20:  # hours gap
+            elif (tid - last_tid) / 3600 > 48 or len(single_traj) > 20:  # hours gap
                 if len(single_traj) > 5:
-            # elif (tid - last_tid) / 3600 > 48 or len(single_traj) > 20:  # hours gap
-            #     if len(single_traj) > 5:
                     user_traj.append(single_traj)
                 single_traj = [record]  # if gap is too long restart a new traj
                 last_tid = tid
@@ -130,41 +128,6 @@ def trajSplit(user_list, traj_list):
             traj_count += len(user_traj)
     print("{} users, {} trajs".format(len(splited_traj.keys()), traj_count))
     return splited_traj
-
-
-def splitTVT(splited_traj, type=0):  # split the traj dict into training set and val sets
-    if type == 0:
-        train_val_dataset = []
-        test_dataset = []
-        for user_id in tqdm(splited_traj):
-            user_trajs = splited_traj[user_id][1:]
-            split_num = int(len(user_trajs) * 0.8)
-            train_val_dataset += user_trajs[:split_num]  # get rid of the first traj, consider it as history
-            test_dataset += user_trajs[split_num:]
-            # len(history_traj) is shorter than len(user_trajs) by 1
-        random.seed(42)
-        random.shuffle(train_val_dataset)
-        train_index = int(len(train_val_dataset) * 0.85)
-        train_dataset = train_val_dataset[:train_index]
-        val_dataset = train_val_dataset[train_index:]
-    else:
-        dataset = []
-        for user_id in tqdm(splited_traj):
-            user_trajs = splited_traj[user_id][1:]
-            dataset += user_trajs
-        random.seed(42)
-        random.shuffle(dataset)
-        train_index = int(len(dataset) * 0.8)
-        val_index = int(len(dataset) * 0.9)
-        train_dataset = dataset[:train_index]
-        val_dataset = dataset[train_index:val_index]
-        test_dataset = dataset[val_index:]
-    print("{} trajs, {} trajs, {} trajs in datasets.".format(
-        len(train_dataset), len(val_dataset), len(test_dataset))
-    )
-    return train_dataset, \
-           val_dataset, \
-           test_dataset
 
 
 def splitTVT_history(splited_traj, type=0):  # split the traj dict into training set and val sets
